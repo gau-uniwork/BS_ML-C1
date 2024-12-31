@@ -1,42 +1,45 @@
+import logging
 import requests
-from .image import Image
+from ..models import Image
 from .base import Scraper
 
 
+logger = logging.getLogger("root")
+
 search_url = (
-    "https://unsplash.com/napi/search/photos?page={p}&per_page=20&plus=none"
-    + "&query=happy+person&xp=search-region-awareness%3Aexperiment"
+    "https://unsplash.com/napi/search/photos?page={page}&per_page=20"
+    + "&plus=none&query={query}&xp=search-region-awareness:experiment"
 )
 
 
 class UnsplashScraper(Scraper):
-    def get_image_specs(self):
-        image_specs = []
-        total_pages = 5
-        for page in range(total_pages):
-            print(f"Page: {page + 1} - {total_pages}")
-            url = search_url.format(p=page + 1)
-            response = requests.get(url)
-            images = response.json()["results"]
-            for image in images:
-                url = image["urls"]["small"]
-                slug = image["slug"]
-                image_specs.append(Image(url=url, slug=slug))
-        return image_specs
+    name = "Unsplash"
 
-    def download_images(self, image_specs):
-        for idx, spec in enumerate(image_specs):
-            print(f"downloading: {idx + 1} - {len(image_specs)}")
-            response = requests.get(spec.url)
-            with open(f"images/{spec.slug}.png", "wb") as f:
-                f.write(response.content)
+    def get_image_urls(self, page: int, query: str) -> list[Image]:
+        url = search_url.format(page=page, query=query)
+        response = requests.get(url)
+        image_tags = response.json()["results"]
+        image_urls = []
+        for image in image_tags:
+            image_url = image["urls"]["small"]
+            slug = image["slug"]
+            image_urls.append(Image(url=image_url, slug=slug, emotion=query.split()[0]))
+        return image_urls
+
+    def get_all_images(self) -> list[Image]:
+        images = []
+        total_pages = 50
+        for idx, query in enumerate(self.queries):
+            logging.info(f"Query: {query}; {idx + 1} - {len(self.queries)}...")
+            for page in range(1, total_pages + 1):
+                logging.info(f"\tScraping page: {page} - {total_pages}")
+                images.extend(self.get_image_urls(page, query))
+        return images
 
     def run(self):
-        #image_specs = self.get_image_specs()
-        #self.download_images(image_specs)
-        print("runing unsplash")
+        image_urls = self.get_all_images()
+        self.download_images(image_urls)
 
 
 if __name__ == "__main__":
-    scraper = UnsplashScraper()
-    scraper.run()
+    UnsplashScraper().run()
